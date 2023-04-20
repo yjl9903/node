@@ -47,14 +47,15 @@ class MaglevCompilationUnit : public ZoneObject {
   int register_count() const { return register_count_; }
   int parameter_count() const { return parameter_count_; }
   int inlining_depth() const { return inlining_depth_; }
+  bool is_inline() const { return inlining_depth_ != 0; }
   bool has_graph_labeller() const;
   MaglevGraphLabeller* graph_labeller() const;
-  const compiler::SharedFunctionInfoRef& shared_function_info() const {
+  compiler::SharedFunctionInfoRef shared_function_info() const {
     return shared_function_info_;
   }
-  const compiler::JSFunctionRef& function() const { return function_; }
-  const compiler::BytecodeArrayRef& bytecode() const { return bytecode_; }
-  const compiler::FeedbackVectorRef& feedback() const { return feedback_; }
+  compiler::JSFunctionRef function() const { return function_; }
+  compiler::BytecodeArrayRef bytecode() const { return bytecode_; }
+  compiler::FeedbackVectorRef feedback() const { return feedback_; }
 
   void RegisterNodeInGraphLabeller(const Node* node);
 

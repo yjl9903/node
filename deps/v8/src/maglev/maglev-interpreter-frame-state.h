@@ -11,11 +11,9 @@
 #include "src/compiler/bytecode-liveness-map.h"
 #include "src/interpreter/bytecode-register.h"
 #include "src/maglev/maglev-compilation-unit.h"
-#include "src/maglev/maglev-graph-printer.h"
 #include "src/maglev/maglev-ir.h"
 #include "src/maglev/maglev-regalloc-data.h"
 #include "src/maglev/maglev-register-frame-array.h"
-#include "src/zone/zone-handle-set.h"
 #include "src/zone/zone.h"
 
 namespace v8 {
@@ -23,6 +21,7 @@ namespace internal {
 namespace maglev {
 
 class BasicBlock;
+class Graph;
 class MergePointInterpreterFrameState;
 
 // Destructively intersects the right map into the left map, such that the
@@ -121,11 +120,13 @@ struct NodeInfo {
   ValueNode* tagged_alternative = nullptr;
   ValueNode* int32_alternative = nullptr;
   ValueNode* float64_alternative = nullptr;
-  ValueNode* truncated_int32_alternative = nullptr;
+  // Alternative nodes with a value equivalent to the ToNumber of this node.
+  ValueNode* truncated_int32_to_number = nullptr;
 
   bool is_empty() {
     return type == NodeType::kUnknown && tagged_alternative == nullptr &&
-           int32_alternative == nullptr && float64_alternative == nullptr;
+           int32_alternative == nullptr && float64_alternative == nullptr &&
+           truncated_int32_to_number == nullptr;
   }
 
   bool is_smi() const { return NodeTypeIsSmi(type); }
@@ -149,9 +150,9 @@ struct NodeInfo {
     float64_alternative = float64_alternative == other.float64_alternative
                               ? float64_alternative
                               : nullptr;
-    truncated_int32_alternative =
-        truncated_int32_alternative == other.truncated_int32_alternative
-            ? truncated_int32_alternative
+    truncated_int32_to_number =
+        truncated_int32_to_number == other.truncated_int32_to_number
+            ? truncated_int32_to_number
             : nullptr;
   }
 };
@@ -219,18 +220,23 @@ struct KnownNodeAspects {
   // Permanently valid if checked in a dominator.
   ZoneMap<ValueNode*, NodeInfo> node_infos;
   // TODO(v8:7700): Investigate a better data structure to use than
-  // ZoneHandleSet.
+  // compiler::ZoneRefSet.
   // Valid across side-effecting calls, as long as we install a dependency.
-  ZoneMap<ValueNode*, ZoneHandleSet<Map>> stable_maps;
+  ZoneMap<ValueNode*, compiler::ZoneRefSet<Map>> stable_maps;
   // Flushed after side-effecting calls.
-  ZoneMap<ValueNode*, ZoneHandleSet<Map>> unstable_maps;
+  ZoneMap<ValueNode*, compiler::ZoneRefSet<Map>> unstable_maps;
+
+  // Cached property loads.
+
+  // Maps name->object->value, so that stores to a name can invalidate all loads
+  // of that name (in case the objects are aliasing).
+  using LoadedPropertyMap =
+      ZoneMap<compiler::NameRef, ZoneMap<ValueNode*, ValueNode*>>;
 
   // Valid across side-effecting calls, as long as we install a dependency.
-  ZoneMap<std::pair<ValueNode*, compiler::NameRef>, ValueNode*>
-      loaded_constant_properties;
+  LoadedPropertyMap loaded_constant_properties;
   // Flushed after side-effecting calls.
-  ZoneMap<std::pair<ValueNode*, compiler::NameRef>, ValueNode*>
-      loaded_properties;
+  LoadedPropertyMap loaded_properties;
 
   // Unconditionally valid across side-effecting calls.
   ZoneMap<std::tuple<ValueNode*, int>, ValueNode*> loaded_context_constants;
@@ -505,7 +511,7 @@ class MergePointInterpreterFrameState {
   static MergePointInterpreterFrameState* NewForCatchBlock(
       const MaglevCompilationUnit& unit,
       const compiler::BytecodeLivenessState* liveness, int handler_offset,
-      interpreter::Register context_register, Graph* graph, bool is_inline);
+      interpreter::Register context_register, Graph* graph);
 
   // Merges an unmerged framestate with a possibly merged framestate into |this|
   // framestate.
