@@ -66,7 +66,7 @@ tool, [postject][]:
 
    The `.exe` extension is necessary.
 
-5. Remove the signature of the binary:
+5. Remove the signature of the binary (macOS and Windows only):
 
    * On macOS:
 
@@ -118,7 +118,7 @@ tool, [postject][]:
          --macho-segment-name NODE_SEA
      ```
 
-7. Sign the binary:
+7. Sign the binary (macOS and Windows only):
 
    * On macOS:
 
